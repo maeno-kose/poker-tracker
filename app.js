@@ -97,13 +97,21 @@ function modal({ title, bodyNode, okText = 'OK', cancelText = 'キャンセル',
   });
 }
 
-async function promptNumber(title, label, initial = '') {
+async function promptNumber(title, label, initial = '', bb = 0) {
   const input = el('input', {
     type: 'number', inputmode: 'decimal', step: '1',
     style: 'width:100%;',
     value: initial,
   });
-  const body = el('label', { style: 'display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--text-dim);' }, label, input);
+  const hint = el('span', { class: 'input-hint' }, bb > 0 ? '= 0 BB' : '');
+  const updateHint = () => {
+    if (!bb) return;
+    const v = parseFloat(input.value);
+    hint.textContent = Number.isFinite(v) ? `= ${(v / bb).toFixed(1)} BB` : '';
+  };
+  input.addEventListener('input', updateHint);
+  updateHint();
+  const body = el('label', { style: 'display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--text-dim);' }, label, input, hint);
   setTimeout(() => input.focus(), 50);
   const ok = await modal({ title, bodyNode: body });
   if (!ok) return null;
@@ -146,6 +154,15 @@ function fmtMoney(n) {
   if (n == null || !Number.isFinite(n)) return '—';
   const sign = n > 0 ? '+' : n < 0 ? '-' : '';
   return sign + Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+// money with BB suffix, e.g. "200 (100BB)"
+function fmtMoneyBB(n, bb) {
+  if (n == null || !Number.isFinite(n)) return '—';
+  const m = fmtMoney(n);
+  if (!bb || bb <= 0) return m;
+  const bbVal = n / bb;
+  const bbStr = (Math.abs(bbVal) >= 100 ? bbVal.toFixed(0) : bbVal.toFixed(1));
+  return `${m} (${bbStr}BB)`;
 }
 
 // breaks may contain unterminated current break (end === null)
@@ -256,12 +273,12 @@ function renderSessionView() {
   $('#meta-venue').textContent = s.venue || '(会場未設定)';
   $('#meta-blinds').textContent = `${s.blinds.sb}/${s.blinds.bb}`;
   $('#meta-table').textContent = `${s.tableSize}-handed (${s.category})`;
-  $('#meta-buyin').textContent = `バイイン: ${fmtMoney(buyinTotal(s))}`;
+  $('#meta-buyin').textContent = `バイイン: ${fmtMoneyBB(buyinTotal(s), s.blinds.bb)}`;
 
   const lastSnap = (s.snapshots && s.snapshots.length)
     ? s.snapshots[s.snapshots.length - 1] : null;
   $('#meta-last-snap').textContent = lastSnap
-    ? `最終チップ: ${fmtMoney(lastSnap.stack)} (#${lastSnap.handIdx})`
+    ? `最終チップ: ${fmtMoneyBB(lastSnap.stack, s.blinds.bb)} (#${lastSnap.handIdx})`
     : '最終チップ: 未記録';
 }
 
@@ -320,12 +337,12 @@ async function toggleBreak() {
 async function doRebuy() {
   const s = state.active;
   if (!s) return;
-  const v = await promptNumber('リバイ / アドオン', '追加バイイン額', '');
+  const v = await promptNumber('リバイ / アドオン', '追加バイイン額', '', s.blinds.bb);
   if (v == null || v <= 0) return;
   s.rebuys = s.rebuys || [];
   s.rebuys.push({ time: new Date().toISOString(), amount: v });
   await DB.putSession(s);
-  toast(`+${v} を追加`);
+  toast(`+${fmtMoneyBB(v, s.blinds.bb)}`);
   renderSessionView();
 }
 
@@ -335,7 +352,7 @@ async function takeSnapshot(opts = {}) {
   const promptMsg = opts.auto
     ? `${s.hands.length}ハンド経過。現在のチップ数を入力してください`
     : '現在のチップ数';
-  const v = await promptNumber('チップ数記録', promptMsg, '');
+  const v = await promptNumber('チップ数記録', promptMsg, '', s.blinds.bb);
   if (v == null) {
     // user cancelled — don't push; remember last prompt point to avoid spam
     s._lastSnapPromptHand = s.hands.length;
@@ -350,7 +367,7 @@ async function takeSnapshot(opts = {}) {
   });
   s._lastSnapPromptHand = s.hands.length;
   await DB.putSession(s);
-  toast(`チップ ${fmtMoney(v)} を記録`);
+  toast(`チップ ${fmtMoneyBB(v, s.blinds.bb)} を記録`);
   renderSessionView();
 }
 
@@ -371,7 +388,7 @@ async function endSession() {
   if (isOnBreak(s)) {
     s.breaks[s.breaks.length - 1].end = new Date().toISOString();
   }
-  const v = await promptNumber('セッション終了', 'キャッシュアウト額', '');
+  const v = await promptNumber('セッション終了', 'キャッシュアウト額', '', s.blinds.bb);
   if (v == null) return;
   s.cashout = v;
   s.endTime = new Date().toISOString();
@@ -419,7 +436,7 @@ async function startSession(e) {
       bb: parseFloat($('#f-bb').value) || 0,
     },
     tableSize,
-    category: $('#f-category').value,
+    category: categoryFromTableSize(tableSize),
     buyinInitial: parseFloat($('#f-buyin').value) || 0,
     rebuys: [],
     cashout: null,
@@ -555,8 +572,8 @@ function renderSessionCard(s) {
       el('span', null, `時間: `, el('b', null, fmtHours(elapsed))),
     ),
     el('div', { class: 'si-row' },
-      el('span', null, `収支: `, el('b', { class: profitClass }, fmtMoney(profit))),
-      el('span', null, `時給: `, el('b', { class: profitClass }, hours > 0 ? fmtMoney(hourly) + '/h' : '—')),
+      el('span', null, `収支: `, el('b', { class: profitClass }, fmtMoneyBB(profit, s.blinds.bb))),
+      el('span', null, `時給: `, el('b', { class: profitClass }, hours > 0 ? fmtMoneyBB(hourly, s.blinds.bb) + '/h' : '—')),
       el('span', null, `bb/100: `, el('b', { class: profitClass }, bb100)),
     ),
   );
@@ -750,11 +767,17 @@ async function init() {
   // tab buttons
   $$('.tab-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
-  // start form
-  $('#f-table-size').addEventListener('change', () => {
-    $('#f-category').value = categoryFromTableSize(parseInt($('#f-table-size').value, 10));
-    populateStartForm();
-  });
+  // start form: live hints (category + buyin BB)
+  const updateStartHints = () => {
+    const ts = parseInt($('#f-table-size').value, 10);
+    $('#f-cat-hint').textContent = '区分: ' + categoryFromTableSize(ts);
+    const bb = parseFloat($('#f-bb').value) || 0;
+    const buy = parseFloat($('#f-buyin').value) || 0;
+    $('#f-buyin-hint').textContent = bb > 0 ? `= ${(buy / bb).toFixed(1)} BB` : '';
+  };
+  $('#f-table-size').addEventListener('change', () => { populateStartForm(); updateStartHints(); });
+  $('#f-bb').addEventListener('input', updateStartHints);
+  $('#f-buyin').addEventListener('input', updateStartHints);
   $('#start-session-form').addEventListener('submit', startSession);
 
   // action buttons
@@ -786,9 +809,7 @@ async function init() {
   });
 
   await initSettingsTab();
-
-  // sync category to match initial table size
-  $('#f-category').value = categoryFromTableSize(parseInt($('#f-table-size').value, 10));
+  updateStartHints();
 
   // restore active session if any
   state.active = await DB.findActiveSession();

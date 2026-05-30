@@ -62,30 +62,23 @@
               <input type="number" id="f-bb" inputmode="decimal" min="0" step="0.5" value="2">
             </label>
           </div>
-          <div class="row2">
-            <label>テーブル人数
-              <select id="f-table-size">
-                <option value="2">2 (HU)</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-                <option value="5">5</option>
-                <option value="6" selected>6 (6-max)</option>
-                <option value="7">7</option>
-                <option value="8">8</option>
-                <option value="9">9 (Full Ring)</option>
-                <option value="10">10</option>
-              </select>
-            </label>
-            <label>区分
-              <select id="f-category">
-                <option value="HU">HU</option>
-                <option value="Short">Short</option>
-                <option value="FullRing" selected>FullRing</option>
-              </select>
-            </label>
-          </div>
+          <label>テーブル人数
+            <select id="f-table-size">
+              <option value="2">2 (HU)</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6" selected>6 (6-max)</option>
+              <option value="7">7</option>
+              <option value="8">8</option>
+              <option value="9">9 (Full Ring)</option>
+              <option value="10">10</option>
+            </select>
+            <span class="input-hint" id="f-cat-hint">区分: Short</span>
+          </label>
           <label>初期バイイン額
             <input type="number" id="f-buyin" inputmode="decimal" min="0" step="1" value="200">
+            <span class="input-hint" id="f-buyin-hint">= 100 BB</span>
           </label>
           <label>初期ポジション (任意)
             <select id="f-start-pos"></select>

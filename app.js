@@ -97,17 +97,28 @@ function modal({ title, bodyNode, okText = 'OK', cancelText = 'キャンセル',
   });
 }
 
-async function promptNumber(title, label, initial = '', bb = 0) {
+// unit: 'jpy' (input is 円) or 'chips' (input is チップ)
+async function promptAmount(title, label, { initial = '', unit = 'jpy', session = null } = {}) {
   const input = el('input', {
-    type: 'number', inputmode: 'decimal', step: '1',
+    type: 'number', inputmode: 'numeric', step: '1',
     style: 'width:100%;',
     value: initial,
   });
-  const hint = el('span', { class: 'input-hint' }, bb > 0 ? '= 0 BB' : '');
+  const hint = el('span', { class: 'input-hint' });
+  const bbJpy = session ? (session.blinds.bb || 0) : 0;
+  const bbChips = session ? (session.blinds.bbChips || bbJpy) : 0;
   const updateHint = () => {
-    if (!bb) return;
     const v = parseFloat(input.value);
-    hint.textContent = Number.isFinite(v) ? `= ${(v / bb).toFixed(1)} BB` : '';
+    if (!Number.isFinite(v)) { hint.textContent = ''; return; }
+    if (unit === 'chips') {
+      if (!session) { hint.textContent = ''; return; }
+      const yen = chipsToYen(v, session);
+      const bbVal = bbChips ? v / bbChips : 0;
+      hint.textContent = `= ${Math.round(yen).toLocaleString()}円 / ${bbVal.toFixed(1)} BB`;
+    } else {
+      if (!bbJpy) { hint.textContent = ''; return; }
+      hint.textContent = `= ${(v / bbJpy).toFixed(1)} BB`;
+    }
   };
   input.addEventListener('input', updateHint);
   updateHint();
@@ -168,6 +179,43 @@ function fmtMoneyBB(n, bb, opts = {}) {
   const signed = opts.signed === true;
   const bbSign = (signed && bbVal > 0) ? '+' : (bbVal < 0) ? '-' : '';
   return `${m} (${bbSign}${bbStr}BB)`;
+}
+
+// chip / yen conversion (chip = yen if bbChips not set or equal to bb)
+function chipsPerYen(s) {
+  const bbJpy = s.blinds.bb || 0;
+  const bbChips = s.blinds.bbChips || bbJpy;
+  if (!bbJpy) return 1;
+  return bbChips / bbJpy;
+}
+function isChipMode(s) {
+  const bbJpy = s.blinds.bb || 0;
+  const bbChips = s.blinds.bbChips || bbJpy;
+  return bbChips && bbJpy && bbChips !== bbJpy;
+}
+function chipsToYen(chips, s) {
+  const r = chipsPerYen(s);
+  if (!r) return chips;
+  return chips / r;
+}
+function yenToChips(yen, s) {
+  return yen * chipsPerYen(s);
+}
+// "200,000チップ (= 20,000円 / 200BB)" or in 1:1 mode just "20,000円 (200BB)"
+function fmtChips(chips, s, opts = {}) {
+  if (chips == null || !Number.isFinite(chips)) return '—';
+  if (!isChipMode(s)) {
+    return fmtMoneyBB(chips, s.blinds.bb, opts);
+  }
+  const signed = opts.signed === true;
+  const sign = (signed && chips > 0) ? '+' : (chips < 0) ? '-' : '';
+  const chipsAbs = Math.round(Math.abs(chips));
+  const yen = chipsToYen(chips, s);
+  const yenAbs = Math.round(Math.abs(yen));
+  const bbVal = chips / s.blinds.bbChips;
+  const bbAbs = Math.abs(bbVal);
+  const bbStr = (bbAbs >= 100) ? Math.round(bbAbs).toString() : bbAbs.toFixed(1);
+  return `${sign}${chipsAbs.toLocaleString()}チップ (${sign}${yenAbs.toLocaleString()}円 / ${sign}${bbStr}BB)`;
 }
 
 // breaks may contain unterminated current break (end === null)
@@ -283,8 +331,8 @@ function renderSessionView() {
   const lastSnap = (s.snapshots && s.snapshots.length)
     ? s.snapshots[s.snapshots.length - 1] : null;
   $('#meta-last-snap').textContent = lastSnap
-    ? `最終チップ: ${fmtMoneyBB(lastSnap.stack, s.blinds.bb)} (#${lastSnap.handIdx})`
-    : '最終チップ: 未記録';
+    ? `最終スタック: ${fmtChips(lastSnap.stack, s)} (#${lastSnap.handIdx})`
+    : '最終スタック: 未記録';
 }
 
 // =========================================================================
@@ -342,7 +390,7 @@ async function toggleBreak() {
 async function doRebuy() {
   const s = state.active;
   if (!s) return;
-  const v = await promptNumber('リバイ / アドオン', '追加バイイン額 (円)', '', s.blinds.bb);
+  const v = await promptAmount('リバイ / アドオン', '追加バイイン額 (円)', { unit: 'jpy', session: s });
   if (v == null || v <= 0) return;
   s.rebuys = s.rebuys || [];
   s.rebuys.push({ time: new Date().toISOString(), amount: v });
@@ -354,10 +402,11 @@ async function doRebuy() {
 async function takeSnapshot(opts = {}) {
   const s = state.active;
   if (!s) return;
+  const unitLabel = isChipMode(s) ? 'チップ' : '円';
   const promptMsg = opts.auto
-    ? `${s.hands.length}ハンド経過。現在のチップ数 (円)`
-    : '現在のチップ数 (円)';
-  const v = await promptNumber('チップ数記録', promptMsg, '', s.blinds.bb);
+    ? `${s.hands.length}ハンド経過。現在のスタック (${unitLabel})`
+    : `現在のスタック (${unitLabel})`;
+  const v = await promptAmount('スタック記録', promptMsg, { unit: isChipMode(s) ? 'chips' : 'jpy', session: s });
   if (v == null) {
     // user cancelled — don't push; remember last prompt point to avoid spam
     s._lastSnapPromptHand = s.hands.length;
@@ -372,7 +421,7 @@ async function takeSnapshot(opts = {}) {
   });
   s._lastSnapPromptHand = s.hands.length;
   await DB.putSession(s);
-  toast(`チップ ${fmtMoneyBB(v, s.blinds.bb)} を記録`);
+  toast(`スタック ${fmtChips(v, s)} を記録`);
   renderSessionView();
 }
 
@@ -424,7 +473,8 @@ async function endSession() {
   if (isOnBreak(s)) {
     s.breaks[s.breaks.length - 1].end = new Date().toISOString();
   }
-  const v = await promptNumber('セッション終了', 'キャッシュアウト額 (円)', '', s.blinds.bb);
+  const unitLabel = isChipMode(s) ? 'チップ' : '円';
+  const v = await promptAmount('セッション終了', `最終スタック (${unitLabel})`, { unit: isChipMode(s) ? 'chips' : 'jpy', session: s });
   if (v == null) return;
   s.cashout = v;
   s.endTime = new Date().toISOString();
@@ -462,6 +512,8 @@ function populateStartForm() {
 async function startSession(e) {
   e.preventDefault();
   const tableSize = parseInt($('#f-table-size').value, 10);
+  const bbJpy = parseFloat($('#f-bb').value) || 0;
+  const bbChipsInput = parseFloat($('#f-bb-chips').value) || 0;
   const session = {
     startTime: new Date().toISOString(),
     endTime: null,
@@ -469,7 +521,8 @@ async function startSession(e) {
     venue: $('#f-venue').value.trim(),
     blinds: {
       sb: parseFloat($('#f-sb').value) || 0,
-      bb: parseFloat($('#f-bb').value) || 0,
+      bb: bbJpy,
+      bbChips: bbChipsInput > 0 ? bbChipsInput : bbJpy,
     },
     tableSize,
     category: categoryFromTableSize(tableSize),
@@ -528,7 +581,8 @@ async function renderRecordTab() {
     agg.pfrNum += st.pfrNum;
     agg.threebNum += st.threebNum;
     totalMs += sessionEffectiveMs(s);
-    const profit = (s.cashout || 0) - buyinTotal(s);
+    const cashoutYen = chipsToYen(s.cashout || 0, s);
+    const profit = cashoutYen - buyinTotal(s);
     totalProfit += profit;
     if (s.blinds && s.blinds.bb > 0) totalBBWon += profit / s.blinds.bb;
     // per-position
@@ -586,7 +640,8 @@ async function renderRecordTab() {
 
 function renderSessionCard(s) {
   const st = statsOf(s.hands);
-  const profit = (s.cashout || 0) - buyinTotal(s);
+  const cashoutYen = chipsToYen(s.cashout || 0, s);
+  const profit = cashoutYen - buyinTotal(s);
   const profitClass = profit > 0 ? 'profit-pos' : profit < 0 ? 'profit-neg' : '';
   const elapsed = sessionEffectiveMs(s);
   const hours = elapsed / 3600000;
@@ -631,12 +686,11 @@ function renderStackChart(s) {
   svg.setAttribute('preserveAspectRatio', 'none');
   svg.classList.add('si-chart');
 
-  // Build series: include initial buyin as starting point at hand 0,
-  // each snapshot, and final cashout if present.
+  // Build series in CHIPS: starting stack = buyin in chips, snapshots are chips,
+  // cashout is chips (in chip mode) or yen=chips (1:1 mode).
   const pts = [];
-  const buyInitial = s.buyinInitial || 0;
-  pts.push({ x: 0, y: buyInitial });
-  // rebuys add to the implied stack baseline; show as gross stack (snapshot value).
+  const buyInitialChips = yenToChips(s.buyinInitial || 0, s);
+  pts.push({ x: 0, y: buyInitialChips });
   for (const sn of (s.snapshots || [])) pts.push({ x: sn.handIdx, y: sn.stack });
   if (s.cashout != null) pts.push({ x: s.hands.length, y: s.cashout });
 
@@ -655,7 +709,7 @@ function renderStackChart(s) {
   ];
 
   // Zero (= initial buyin) reference line
-  const baseY = scale(0, buyInitial)[1];
+  const baseY = scale(0, buyInitialChips)[1];
   const baseLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
   baseLine.setAttribute('x1', 0); baseLine.setAttribute('x2', W);
   baseLine.setAttribute('y1', baseY); baseLine.setAttribute('y2', baseY);
@@ -803,16 +857,36 @@ async function init() {
   // tab buttons
   $$('.tab-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
-  // start form: live hints (category + buyin BB)
+  // start form: live hints (category + buyin BB + chip rate)
   const updateStartHints = () => {
     const ts = parseInt($('#f-table-size').value, 10);
     $('#f-cat-hint').textContent = '区分: ' + categoryFromTableSize(ts);
     const bb = parseFloat($('#f-bb').value) || 0;
     const buy = parseFloat($('#f-buyin').value) || 0;
     $('#f-buyin-hint').textContent = bb > 0 ? `= ${(buy / bb).toFixed(1)} BB` : '';
+    const bbChips = parseFloat($('#f-bb-chips').value) || 0;
+    if (bb > 0 && bbChips > 0) {
+      if (bbChips === bb) {
+        $('#f-bb-chips-hint').textContent = '1チップ = 1円（同単位）';
+      } else {
+        const cv = bb / bbChips;
+        $('#f-bb-chips-hint').textContent = `1チップ = ${cv.toFixed(cv >= 1 ? 0 : 2)}円`;
+      }
+    } else {
+      $('#f-bb-chips-hint').textContent = '';
+    }
   };
   $('#f-table-size').addEventListener('change', () => { populateStartForm(); updateStartHints(); });
-  $('#f-bb').addEventListener('input', updateStartHints);
+  $('#f-bb').addEventListener('input', () => {
+    // if user hasn't customized chips, keep chips synced to bb (1:1)
+    const bbEl = $('#f-bb'), chipEl = $('#f-bb-chips');
+    if (!chipEl.dataset.touched) chipEl.value = bbEl.value;
+    updateStartHints();
+  });
+  $('#f-bb-chips').addEventListener('input', () => {
+    $('#f-bb-chips').dataset.touched = '1';
+    updateStartHints();
+  });
   $('#f-buyin').addEventListener('input', updateStartHints);
   $('#start-session-form').addEventListener('submit', startSession);
 

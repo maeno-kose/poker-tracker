@@ -56,12 +56,16 @@
           </label>
           <div class="row2">
             <label>SB (円)
-              <input type="number" id="f-sb" inputmode="numeric" min="0" step="1" value="100">
+              <input type="number" id="f-sb" inputmode="numeric" min="0" step="1" value="50">
             </label>
             <label>BB (円)
-              <input type="number" id="f-bb" inputmode="numeric" min="0" step="1" value="200">
+              <input type="number" id="f-bb" inputmode="numeric" min="0" step="1" value="100">
             </label>
           </div>
+          <label>1 BB = ? チップ
+            <input type="number" id="f-bb-chips" inputmode="numeric" min="1" step="1" value="100">
+            <span class="input-hint" id="f-bb-chips-hint">1チップ = 1円（同単位）</span>
+          </label>
           <label>テーブル人数
             <select id="f-table-size">
               <option value="2">2 (HU)</option>
@@ -77,7 +81,7 @@
             <span class="input-hint" id="f-cat-hint">区分: Short</span>
           </label>
           <label>初期バイイン額 (円)
-            <input type="number" id="f-buyin" inputmode="numeric" min="0" step="1000" value="20000">
+            <input type="number" id="f-buyin" inputmode="numeric" min="0" step="1000" value="10000">
             <span class="input-hint" id="f-buyin-hint">= 100 BB</span>
           </label>
           <label>初期ポジション (任意)

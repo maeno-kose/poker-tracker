@@ -342,6 +342,14 @@ function renderSessionView() {
   $('#break-btn').classList.toggle('active', isOnBreak(s));
   $('#break-btn').textContent = isOnBreak(s) ? '復帰' : '離席';
 
+  // BBチェックは現在ポジションがBBのときだけ有効
+  const checkBtn = $('.act-check');
+  if (checkBtn) {
+    const atBB = currentPositionLabel(s) === 'BB';
+    checkBtn.disabled = !atBB;
+    checkBtn.classList.toggle('disabled', !atBB);
+  }
+
   $('#meta-venue').textContent = s.venue || '(会場未設定)';
   $('#meta-blinds').textContent = `${s.blinds.sb}/${s.blinds.bb}`;
   $('#meta-table').textContent = `${s.tableSize}-handed (${s.category})`;
@@ -365,6 +373,10 @@ async function recordAction(action) {
     return;
   }
   const pos = currentPositionLabel(s);
+  if (action === 'bbcheck' && pos !== 'BB') {
+    toast('BBチェックはBBの時だけ');
+    return;
+  }
   s.hands.push({
     action,
     position: pos,

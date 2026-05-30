@@ -617,6 +617,21 @@ textarea { min-height: 140px; font-family: ui-monospace, SF Mono, Menlo, monospa
 .act-check .act-sym { font-size: 22px; }
 .act-check .act-lbl { font-size: 14px; }
 
+/* Disabled state — used for BBチェック when not at BB */
+.act-btn.disabled,
+.act-btn:disabled {
+  filter: grayscale(.75) brightness(.45);
+  opacity: .55;
+  cursor: not-allowed;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+}
+.act-btn.disabled::before,
+.act-btn:disabled::before { display: none; }
+.act-btn.disabled::after,
+.act-btn:disabled::after { display: none; }
+.act-btn.disabled:active,
+.act-btn:disabled:active { transform: none; filter: grayscale(.75) brightness(.45); }
+
 /* Util row */
 #util-row {
   display: grid;

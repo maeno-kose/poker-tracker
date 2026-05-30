@@ -417,11 +417,10 @@ async function doRebuy() {
 async function takeSnapshot(opts = {}) {
   const s = state.active;
   if (!s) return;
-  const unitLabel = isChipMode(s) ? 'チップ' : '円';
   const promptMsg = opts.auto
-    ? `${s.hands.length}ハンド経過。現在のスタック (${unitLabel})`
-    : `現在のスタック (${unitLabel})`;
-  const v = await promptAmount('スタック記録', promptMsg, { unit: isChipMode(s) ? 'chips' : 'jpy', session: s });
+    ? `${s.hands.length}ハンド経過。現在のスタック (チップ)`
+    : `現在のスタック (チップ)`;
+  const v = await promptAmount('スタック記録', promptMsg, { unit: 'chips', session: s });
   if (v == null) {
     // user cancelled — don't push; remember last prompt point to avoid spam
     s._lastSnapPromptHand = s.hands.length;
@@ -488,8 +487,7 @@ async function endSession() {
   if (isOnBreak(s)) {
     s.breaks[s.breaks.length - 1].end = new Date().toISOString();
   }
-  const unitLabel = isChipMode(s) ? 'チップ' : '円';
-  const v = await promptAmount('セッション終了', `最終スタック (${unitLabel})`, { unit: isChipMode(s) ? 'chips' : 'jpy', session: s });
+  const v = await promptAmount('セッション終了', '最終スタック (チップ)', { unit: 'chips', session: s });
   if (v == null) return;
   s.cashout = v;
   s.endTime = new Date().toISOString();

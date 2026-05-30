@@ -382,6 +382,37 @@ function maybePromptSnapshot() {
   }
 }
 
+async function changeTableSize() {
+  const s = state.active;
+  if (!s) return;
+  const sel = el('select', { style: 'width:100%;' });
+  [2,3,4,5,6,7,8,9,10].forEach((n) => {
+    const o = el('option', { value: String(n) }, `${n}-handed` + (n === 2 ? ' (HU)' : n === 6 ? ' (6-max)' : n === 9 ? ' (Full Ring)' : ''));
+    sel.append(o);
+  });
+  sel.value = String(s.tableSize);
+  const hint = el('span', { class: 'input-hint' }, `区分: ${categoryFromTableSize(s.tableSize)}`);
+  sel.addEventListener('change', () => {
+    hint.textContent = '区分: ' + categoryFromTableSize(parseInt(sel.value, 10));
+  });
+  const body = el('label', { style: 'display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--text-dim);' },
+    'テーブル人数', sel, hint,
+    el('p', { class: 'hint', style: 'margin-top:8px;' }, '※ 次のハンドから新しい人数のローテーションになります。過去のハンドの記録はそのまま保持されます。'),
+  );
+  const ok = await modal({ title: 'テーブル人数変更', bodyNode: body });
+  if (!ok) return;
+  const newSize = parseInt(sel.value, 10);
+  if (newSize === s.tableSize) return;
+  s.tableSize = newSize;
+  s.category = categoryFromTableSize(newSize);
+  const arr = POSITIONS[newSize];
+  // clamp current position to new range
+  if (s.currentPositionIdx >= arr.length) s.currentPositionIdx = arr.length - 1;
+  await DB.putSession(s);
+  renderSessionView();
+  toast(`${newSize}-handed に変更`);
+}
+
 async function endSession() {
   const s = state.active;
   if (!s) return;
@@ -789,6 +820,7 @@ async function init() {
   $('#rebuy-btn').addEventListener('click', doRebuy);
   $('#snapshot-btn').addEventListener('click', () => takeSnapshot({}));
   $('#end-session-btn').addEventListener('click', endSession);
+  $('#meta-table').addEventListener('click', changeTableSize);
 
   // position manual nav
   $('#pos-prev').addEventListener('click', async () => {

@@ -207,25 +207,23 @@ function chipsToYen(chips, s) {
 function yenToChips(yen, s) {
   return yen * chipsPerYen(s);
 }
-// In yen mode: "200,000チップ (= 20,000円)" or just "20,000円" in 1:1 mode.
-// In BB mode: "200BB" (signed: "+200BB")
+// Chip-record format: chips are PRIMARY (table reality), ¥ or BB is the sub
+// (per current displayUnit toggle). In 1:1 mode (chips == yen) just use money fmt.
+//   "200,000チップ (= 20,000円)"   yen mode + chip mode
+//   "200,000チップ (= 200BB)"      BB mode  + chip mode
+//   "20,000円"                     yen mode + 1:1 mode
+//   "200BB"                        BB mode  + 1:1 mode
 function fmtChips(chips, s, opts = {}) {
   if (chips == null || !Number.isFinite(chips)) return '—';
-  const signed = opts.signed === true;
-  // BB mode: show only BB regardless of chip mode
-  if (state.displayUnit === 'bb' && s.blinds.bb > 0) {
-    const yen = isChipMode(s) ? chipsToYen(chips, s) : chips;
-    return fmtBB(yen, s.blinds.bb, opts);
-  }
-  // Yen mode
   if (!isChipMode(s)) {
-    return fmtMoney(chips, opts);
+    return fmtMoneyBB(chips, s.blinds.bb, opts);
   }
+  const signed = opts.signed === true;
   const sign = (signed && chips > 0) ? '+' : (chips < 0) ? '-' : '';
   const chipsAbs = Math.round(Math.abs(chips));
   const yen = chipsToYen(chips, s);
-  const yenAbs = Math.round(Math.abs(yen));
-  return `${sign}${chipsAbs.toLocaleString()}チップ (= ${sign}${yenAbs.toLocaleString()}円)`;
+  const subStr = fmtMoneyBB(yen, s.blinds.bb, opts);
+  return `${sign}${chipsAbs.toLocaleString()}チップ (= ${subStr})`;
 }
 
 // breaks may contain unterminated current break (end === null)

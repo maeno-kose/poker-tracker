@@ -31,6 +31,7 @@ const state = {
   tickInt: null,        // interval id for elapsed clock
   snapshotIntervalDefault: 50,
   filter: 'all',
+  displayUnit: 'jpy',   // 'jpy' | 'bb' — controls how money/chips render
 };
 
 // =========================================================================
@@ -168,17 +169,22 @@ function fmtMoney(n, opts = {}) {
   const sign = (signed && n > 0) ? '+' : (n < 0) ? '-' : '';
   return sign + Math.round(Math.abs(n)).toLocaleString() + '円';
 }
-// "200円 (100BB)" or signed "+200円 (+100BB)"
-function fmtMoneyBB(n, bb, opts = {}) {
+// "100BB" / "+100BB" / "-12.5BB". opts.signed adds sign for positives.
+function fmtBB(n, bb, opts = {}) {
   if (n == null || !Number.isFinite(n)) return '—';
-  const m = fmtMoney(n, opts);
-  if (!bb || bb <= 0) return m;
+  if (!bb || bb <= 0) return '—';
   const bbVal = n / bb;
   const bbAbs = Math.abs(bbVal);
   const bbStr = (bbAbs >= 100) ? Math.round(bbAbs).toString() : bbAbs.toFixed(1);
   const signed = opts.signed === true;
-  const bbSign = (signed && bbVal > 0) ? '+' : (bbVal < 0) ? '-' : '';
-  return `${m} (${bbSign}${bbStr}BB)`;
+  const sign = (signed && bbVal > 0) ? '+' : (bbVal < 0) ? '-' : '';
+  return `${sign}${bbStr}BB`;
+}
+// Display either yen or BB depending on state.displayUnit. Single-unit, no parens.
+function fmtMoneyBB(n, bb, opts = {}) {
+  if (n == null || !Number.isFinite(n)) return '—';
+  if (state.displayUnit === 'bb' && bb && bb > 0) return fmtBB(n, bb, opts);
+  return fmtMoney(n, opts);
 }
 
 // chip / yen conversion (chip = yen if bbChips not set or equal to bb)
@@ -201,21 +207,25 @@ function chipsToYen(chips, s) {
 function yenToChips(yen, s) {
   return yen * chipsPerYen(s);
 }
-// "200,000チップ (= 20,000円 / 200BB)" or in 1:1 mode just "20,000円 (200BB)"
+// In yen mode: "200,000チップ (= 20,000円)" or just "20,000円" in 1:1 mode.
+// In BB mode: "200BB" (signed: "+200BB")
 function fmtChips(chips, s, opts = {}) {
   if (chips == null || !Number.isFinite(chips)) return '—';
-  if (!isChipMode(s)) {
-    return fmtMoneyBB(chips, s.blinds.bb, opts);
-  }
   const signed = opts.signed === true;
+  // BB mode: show only BB regardless of chip mode
+  if (state.displayUnit === 'bb' && s.blinds.bb > 0) {
+    const yen = isChipMode(s) ? chipsToYen(chips, s) : chips;
+    return fmtBB(yen, s.blinds.bb, opts);
+  }
+  // Yen mode
+  if (!isChipMode(s)) {
+    return fmtMoney(chips, opts);
+  }
   const sign = (signed && chips > 0) ? '+' : (chips < 0) ? '-' : '';
   const chipsAbs = Math.round(Math.abs(chips));
   const yen = chipsToYen(chips, s);
   const yenAbs = Math.round(Math.abs(yen));
-  const bbVal = chips / s.blinds.bbChips;
-  const bbAbs = Math.abs(bbVal);
-  const bbStr = (bbAbs >= 100) ? Math.round(bbAbs).toString() : bbAbs.toFixed(1);
-  return `${sign}${chipsAbs.toLocaleString()}チップ (${sign}${yenAbs.toLocaleString()}円 / ${sign}${bbStr}BB)`;
+  return `${sign}${chipsAbs.toLocaleString()}チップ (= ${sign}${yenAbs.toLocaleString()}円)`;
 }
 
 // breaks may contain unterminated current break (end === null)
@@ -606,9 +616,25 @@ async function renderRecordTab() {
   $('#lt-pfr').textContent = agg.total ? Math.round(agg.pfrNum / agg.total * 100) + '%' : '0%';
   $('#lt-3bet').textContent = agg.total ? Math.round(agg.threebNum / agg.total * 100) + '%' : '0%';
   $('#lt-time').textContent = fmtHours(totalMs);
-  $('#lt-profit').textContent = fmtMoney(totalProfit, { signed: true });
   const hours = totalMs / 3600000;
-  $('#lt-hourly').textContent = hours > 0 ? fmtMoney(totalProfit / hours, { signed: true }) + '/h' : '—';
+  if (state.displayUnit === 'bb') {
+    const bbAbs = Math.abs(totalBBWon);
+    const bbStr = bbAbs >= 100 ? Math.round(bbAbs).toString() : bbAbs.toFixed(1);
+    const sign = totalBBWon > 0 ? '+' : totalBBWon < 0 ? '-' : '';
+    $('#lt-profit').textContent = totalBBWon === 0 ? '±0BB' : `${sign}${bbStr}BB`;
+    if (hours > 0) {
+      const perH = totalBBWon / hours;
+      const perHAbs = Math.abs(perH);
+      const perHStr = perHAbs >= 100 ? Math.round(perHAbs).toString() : perHAbs.toFixed(1);
+      const perHSign = perH > 0 ? '+' : perH < 0 ? '-' : '';
+      $('#lt-hourly').textContent = `${perHSign}${perHStr}BB/h`;
+    } else {
+      $('#lt-hourly').textContent = '—';
+    }
+  } else {
+    $('#lt-profit').textContent = fmtMoney(totalProfit, { signed: true });
+    $('#lt-hourly').textContent = hours > 0 ? fmtMoney(totalProfit / hours, { signed: true }) + '/h' : '—';
+  }
   $('#lt-bb100').textContent = agg.total > 0 ? (totalBBWon * 100 / agg.total).toFixed(1) : '0';
 
   // ----- Position table -----
@@ -766,6 +792,23 @@ async function applyDarkMode(enabled) {
   await DB.setSetting('darkMode', enabled);
 }
 
+function syncUnitToggleUI() {
+  $$('#unit-toggle .ut-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.unit === state.displayUnit);
+  });
+}
+
+async function setDisplayUnit(unit) {
+  if (unit !== 'jpy' && unit !== 'bb') return;
+  if (state.displayUnit === unit) return;
+  state.displayUnit = unit;
+  await DB.setSetting('displayUnit', unit);
+  syncUnitToggleUI();
+  // re-render anything that shows money/chip values
+  renderSessionView();
+  renderRecordTab();
+}
+
 async function initSettingsTab() {
   const dark = await DB.getSetting('darkMode', true);
   $('#set-dark').checked = !!dark;
@@ -785,6 +828,11 @@ async function initSettingsTab() {
     }
     toast('保存しました');
   });
+
+  // display unit (jpy/bb)
+  const savedUnit = await DB.getSetting('displayUnit', 'jpy');
+  state.displayUnit = (savedUnit === 'bb') ? 'bb' : 'jpy';
+  syncUnitToggleUI();
 
   $('#backup-export').addEventListener('click', backupExport);
   $('#backup-import').addEventListener('click', backupImport);
@@ -924,6 +972,11 @@ async function init() {
   $('#record-filter').addEventListener('change', (e) => {
     state.filter = e.target.value;
     renderRecordTab();
+  });
+
+  // display unit toggle (¥ / BB)
+  $$('#unit-toggle .ut-btn').forEach((b) => {
+    b.addEventListener('click', () => setDisplayUnit(b.dataset.unit));
   });
 
   await initSettingsTab();

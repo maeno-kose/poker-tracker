@@ -81,6 +81,10 @@
           <div class="meta-num" id="elapsed">00:00</div>
           <div class="meta-label">経過</div>
         </div>
+        <div class="unit-toggle" id="unit-toggle" role="group" aria-label="表示単位切替">
+          <button type="button" class="ut-btn active" data-unit="jpy" aria-label="円表示">¥</button>
+          <button type="button" class="ut-btn" data-unit="bb" aria-label="BB表示">BB</button>
+        </div>
       </div>
     </div>
     <nav id="tabs">
@@ -164,7 +168,9 @@
           <button id="break-btn">離席</button>
           <button id="rebuy-btn">リバイ</button>
           <button id="snapshot-btn">チップ記録</button>
-          <button id="end-session-btn" class="danger">セッション終了</button>
+        </div>
+        <div id="end-row">
+          <button id="end-session-btn" class="danger end-btn">セッション終了</button>
         </div>
 
         <div id="session-meta">

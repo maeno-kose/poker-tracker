@@ -197,6 +197,37 @@ body.light .ring-bg { stroke: rgba(0,0,0,.07); }
   text-transform: uppercase;
 }
 
+/* Unit toggle (¥ / BB) */
+.unit-toggle {
+  display: inline-flex;
+  align-self: flex-end;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px;
+  margin-top: 2px;
+  overflow: hidden;
+}
+.ut-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: background .15s, color .15s;
+  min-width: 34px;
+}
+.ut-btn:active { filter: brightness(1.1); }
+.ut-btn.active {
+  background: linear-gradient(135deg, var(--primary-2), var(--primary-3));
+  color: white;
+  box-shadow: 0 2px 8px rgba(99,102,241,.4);
+}
+
 /* Tabs */
 #tabs {
   display: flex;
@@ -457,10 +488,10 @@ textarea { min-height: 140px; font-family: ui-monospace, SF Mono, Menlo, monospa
   font-size: 18px;
 }
 
-/* Util row */
+/* Util row (frequent in-session actions) */
 #util-row {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
 }
 #util-row button {
@@ -468,24 +499,40 @@ textarea { min-height: 140px; font-family: ui-monospace, SF Mono, Menlo, monospa
   border: 1px solid var(--line-soft);
   color: var(--text);
   border-radius: var(--r-sm);
-  padding: 11px 4px;
-  font-size: 12px;
+  padding: 12px 4px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   transition: all .15s;
 }
 #util-row button:active { background: var(--card-2); transform: scale(.96); }
-#util-row button.danger {
-  background: transparent;
-  color: var(--danger);
-  border-color: rgba(239,68,68,.4);
-  box-shadow: none;
-}
-#util-row button.danger:active { background: rgba(239,68,68,.1); }
 #util-row button.active {
   background: linear-gradient(135deg, var(--warn), #d97706);
   color: #0f172a;
   border-color: transparent;
+}
+
+/* End-session row (separated to avoid misfire) */
+#end-row {
+  margin-top: 2px;
+}
+.end-btn {
+  width: 100%;
+  background: transparent !important;
+  color: var(--danger) !important;
+  border: 1px dashed rgba(239,68,68,.45) !important;
+  box-shadow: none !important;
+  padding: 10px !important;
+  font-size: 12px !important;
+  font-weight: 700;
+  letter-spacing: 1px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: all .15s;
+}
+.end-btn:active {
+  background: rgba(239,68,68,.1) !important;
+  transform: scale(.99);
 }
 
 #session-meta {

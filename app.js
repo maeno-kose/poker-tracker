@@ -150,19 +150,24 @@ function fmtDate(iso) {
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${y}/${m}/${day} ${hh}:${mm}`;
 }
-function fmtMoney(n) {
+// "1,200円" (default) or "+1,200円" / "-1,200円" with signed:true. Integer.
+function fmtMoney(n, opts = {}) {
   if (n == null || !Number.isFinite(n)) return '—';
-  const sign = n > 0 ? '+' : n < 0 ? '-' : '';
-  return sign + Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const signed = opts.signed === true;
+  const sign = (signed && n > 0) ? '+' : (n < 0) ? '-' : '';
+  return sign + Math.round(Math.abs(n)).toLocaleString() + '円';
 }
-// money with BB suffix, e.g. "200 (100BB)"
-function fmtMoneyBB(n, bb) {
+// "200円 (100BB)" or signed "+200円 (+100BB)"
+function fmtMoneyBB(n, bb, opts = {}) {
   if (n == null || !Number.isFinite(n)) return '—';
-  const m = fmtMoney(n);
+  const m = fmtMoney(n, opts);
   if (!bb || bb <= 0) return m;
   const bbVal = n / bb;
-  const bbStr = (Math.abs(bbVal) >= 100 ? bbVal.toFixed(0) : bbVal.toFixed(1));
-  return `${m} (${bbStr}BB)`;
+  const bbAbs = Math.abs(bbVal);
+  const bbStr = (bbAbs >= 100) ? Math.round(bbAbs).toString() : bbAbs.toFixed(1);
+  const signed = opts.signed === true;
+  const bbSign = (signed && bbVal > 0) ? '+' : (bbVal < 0) ? '-' : '';
+  return `${m} (${bbSign}${bbStr}BB)`;
 }
 
 // breaks may contain unterminated current break (end === null)
@@ -337,12 +342,12 @@ async function toggleBreak() {
 async function doRebuy() {
   const s = state.active;
   if (!s) return;
-  const v = await promptNumber('リバイ / アドオン', '追加バイイン額', '', s.blinds.bb);
+  const v = await promptNumber('リバイ / アドオン', '追加バイイン額 (円)', '', s.blinds.bb);
   if (v == null || v <= 0) return;
   s.rebuys = s.rebuys || [];
   s.rebuys.push({ time: new Date().toISOString(), amount: v });
   await DB.putSession(s);
-  toast(`+${fmtMoneyBB(v, s.blinds.bb)}`);
+  toast(`${fmtMoneyBB(v, s.blinds.bb, { signed: true })} 追加`);
   renderSessionView();
 }
 
@@ -350,8 +355,8 @@ async function takeSnapshot(opts = {}) {
   const s = state.active;
   if (!s) return;
   const promptMsg = opts.auto
-    ? `${s.hands.length}ハンド経過。現在のチップ数を入力してください`
-    : '現在のチップ数';
+    ? `${s.hands.length}ハンド経過。現在のチップ数 (円)`
+    : '現在のチップ数 (円)';
   const v = await promptNumber('チップ数記録', promptMsg, '', s.blinds.bb);
   if (v == null) {
     // user cancelled — don't push; remember last prompt point to avoid spam
@@ -419,7 +424,7 @@ async function endSession() {
   if (isOnBreak(s)) {
     s.breaks[s.breaks.length - 1].end = new Date().toISOString();
   }
-  const v = await promptNumber('セッション終了', 'キャッシュアウト額', '', s.blinds.bb);
+  const v = await promptNumber('セッション終了', 'キャッシュアウト額 (円)', '', s.blinds.bb);
   if (v == null) return;
   s.cashout = v;
   s.endTime = new Date().toISOString();
@@ -540,9 +545,9 @@ async function renderRecordTab() {
   $('#lt-pfr').textContent = agg.total ? Math.round(agg.pfrNum / agg.total * 100) + '%' : '0%';
   $('#lt-3bet').textContent = agg.total ? Math.round(agg.threebNum / agg.total * 100) + '%' : '0%';
   $('#lt-time').textContent = fmtHours(totalMs);
-  $('#lt-profit').textContent = fmtMoney(totalProfit);
+  $('#lt-profit').textContent = fmtMoney(totalProfit, { signed: true });
   const hours = totalMs / 3600000;
-  $('#lt-hourly').textContent = hours > 0 ? fmtMoney(totalProfit / hours) + '/h' : '—';
+  $('#lt-hourly').textContent = hours > 0 ? fmtMoney(totalProfit / hours, { signed: true }) + '/h' : '—';
   $('#lt-bb100').textContent = agg.total > 0 ? (totalBBWon * 100 / agg.total).toFixed(1) : '0';
 
   // ----- Position table -----
@@ -603,8 +608,8 @@ function renderSessionCard(s) {
       el('span', null, `時間: `, el('b', null, fmtHours(elapsed))),
     ),
     el('div', { class: 'si-row' },
-      el('span', null, `収支: `, el('b', { class: profitClass }, fmtMoneyBB(profit, s.blinds.bb))),
-      el('span', null, `時給: `, el('b', { class: profitClass }, hours > 0 ? fmtMoneyBB(hourly, s.blinds.bb) + '/h' : '—')),
+      el('span', null, `収支: `, el('b', { class: profitClass }, fmtMoneyBB(profit, s.blinds.bb, { signed: true }))),
+      el('span', null, `時給: `, el('b', { class: profitClass }, hours > 0 ? fmtMoneyBB(hourly, s.blinds.bb, { signed: true }) + '/h' : '—')),
       el('span', null, `bb/100: `, el('b', { class: profitClass }, bb100)),
     ),
   );

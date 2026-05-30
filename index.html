@@ -55,11 +55,11 @@
             <input type="text" id="f-venue" placeholder="例: 〇〇カジノ" autocomplete="off">
           </label>
           <div class="row2">
-            <label>SB
-              <input type="number" id="f-sb" inputmode="decimal" min="0" step="0.5" value="1">
+            <label>SB (円)
+              <input type="number" id="f-sb" inputmode="numeric" min="0" step="1" value="100">
             </label>
-            <label>BB
-              <input type="number" id="f-bb" inputmode="decimal" min="0" step="0.5" value="2">
+            <label>BB (円)
+              <input type="number" id="f-bb" inputmode="numeric" min="0" step="1" value="200">
             </label>
           </div>
           <label>テーブル人数
@@ -76,8 +76,8 @@
             </select>
             <span class="input-hint" id="f-cat-hint">区分: Short</span>
           </label>
-          <label>初期バイイン額
-            <input type="number" id="f-buyin" inputmode="decimal" min="0" step="1" value="200">
+          <label>初期バイイン額 (円)
+            <input type="number" id="f-buyin" inputmode="numeric" min="0" step="1000" value="20000">
             <span class="input-hint" id="f-buyin-hint">= 100 BB</span>
           </label>
           <label>初期ポジション (任意)

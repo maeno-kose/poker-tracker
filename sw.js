@@ -1,5 +1,5 @@
 /* Service Worker for Poker Hand Tracker */
-const CACHE = 'poker-tracker-v1';
+const CACHE = 'poker-tracker-v2';
 const ASSETS = [
   './',
   './index.html',

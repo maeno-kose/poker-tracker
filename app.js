@@ -352,7 +352,7 @@ function renderSessionView() {
 
   $('#meta-venue').textContent = s.venue || '(会場未設定)';
   $('#meta-blinds').textContent = `${s.blinds.sb}/${s.blinds.bb}`;
-  $('#meta-table').textContent = `${s.tableSize}-handed (${s.category})`;
+  $('#meta-table').textContent = `${s.tableSize}人`;
   $('#meta-buyin').textContent = `バイイン: ${fmtMoneyBB(buyinTotal(s), s.blinds.bb)}`;
 
   const lastSnap = (s.snapshots && s.snapshots.length)
@@ -471,16 +471,11 @@ async function changeTableSize() {
   if (!s) return;
   const sel = el('select', { style: 'width:100%;' });
   [2,3,4,5,6,7,8,9,10].forEach((n) => {
-    const o = el('option', { value: String(n) }, `${n}-handed` + (n === 2 ? ' (HU)' : n === 6 ? ' (6-max)' : n === 9 ? ' (Full Ring)' : ''));
-    sel.append(o);
+    sel.append(el('option', { value: String(n) }, `${n}人`));
   });
   sel.value = String(s.tableSize);
-  const hint = el('span', { class: 'input-hint' }, `区分: ${categoryFromTableSize(s.tableSize)}`);
-  sel.addEventListener('change', () => {
-    hint.textContent = '区分: ' + categoryFromTableSize(parseInt(sel.value, 10));
-  });
   const body = el('label', { style: 'display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--text-dim);' },
-    'テーブル人数', sel, hint,
+    'テーブル人数', sel,
     el('p', { class: 'hint', style: 'margin-top:8px;' }, '※ 次のハンドから新しい人数のローテーションになります。過去のハンドの記録はそのまま保持されます。'),
   );
   const ok = await modal({ title: 'テーブル人数変更', bodyNode: body });
@@ -494,7 +489,7 @@ async function changeTableSize() {
   if (s.currentPositionIdx >= arr.length) s.currentPositionIdx = arr.length - 1;
   await DB.putSession(s);
   renderSessionView();
-  toast(`${newSize}-handed に変更`);
+  toast(`${newSize}人に変更`);
 }
 
 async function endSession() {
@@ -595,9 +590,27 @@ function stopClock() {
 async function renderRecordTab() {
   const all = await DB.listSessions();
   const ended = all.filter((s) => s.status === 'ended');
+
+  // Rebuild filter options based on table sizes that actually exist
+  const sizesPresent = [...new Set(ended.map((s) => s.tableSize))].sort((a, b) => a - b);
+  const filterSel = $('#record-filter');
+  const prev = state.filter;
+  filterSel.innerHTML = '';
+  filterSel.append(el('option', { value: 'all' }, 'すべて'));
+  for (const n of sizesPresent) {
+    filterSel.append(el('option', { value: `TS${n}` }, `${n}人`));
+  }
+  // restore selection if still valid
+  if ([...filterSel.options].some((o) => o.value === prev)) {
+    filterSel.value = prev;
+  } else {
+    filterSel.value = 'all';
+    state.filter = 'all';
+  }
+
   const filtered = (state.filter === 'all')
     ? ended
-    : ended.filter((s) => s.category === state.filter);
+    : ended.filter((s) => `TS${s.tableSize}` === state.filter);
 
   // ----- Lifetime aggregate -----
   let agg = { total: 0, vpipNum: 0, pfrNum: 0, threebNum: 0 };
@@ -698,7 +711,7 @@ function renderSessionCard(s) {
   card.append(
     el('header', null,
       el('div', { class: 'si-title' }, `${s.venue || '(無名)'} ${s.blinds.sb}/${s.blinds.bb}`),
-      el('div', { class: 'si-meta' }, `${fmtDate(s.startTime)} • ${s.tableSize}h ${s.category}`),
+      el('div', { class: 'si-meta' }, `${fmtDate(s.startTime)} • ${s.tableSize}人`),
     ),
     el('div', { class: 'si-row' },
       el('span', null, `Hands: `, el('b', null, String(st.total))),
@@ -924,10 +937,8 @@ async function init() {
   // tab buttons
   $$('.tab-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
-  // start form: live hints (category + buyin BB + chip rate)
+  // start form: live hints (buyin BB + chip rate)
   const updateStartHints = () => {
-    const ts = parseInt($('#f-table-size').value, 10);
-    $('#f-cat-hint').textContent = '区分: ' + categoryFromTableSize(ts);
     const bb = parseFloat($('#f-bb').value) || 0;
     const buy = parseFloat($('#f-buyin').value) || 0;
     $('#f-buyin-hint').textContent = bb > 0 ? `= ${(buy / bb).toFixed(1)} BB` : '';

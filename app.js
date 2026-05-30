@@ -295,8 +295,10 @@ function renderTopBar() {
   $('#pfr-pct').textContent = Math.round(stats.pfr * 100) + '%';
   $('#threeb-pct').textContent = Math.round(stats.threebPct * 100) + '%';
 
-  const dash = Math.max(0, 100 - Math.min(100, stats.vpip * 100));
-  $('#vpip-ring').style.strokeDashoffset = dash;
+  const dashFor = (p) => Math.max(0, 100 - Math.min(100, p * 100));
+  $('#vpip-ring').style.strokeDashoffset = dashFor(stats.vpip);
+  $('#pfr-ring').style.strokeDashoffset = dashFor(stats.pfr);
+  $('#threeb-ring').style.strokeDashoffset = dashFor(stats.threebPct);
 
   $('#elapsed').textContent = s ? fmtElapsed(sessionEffectiveMs(s)) : '00:00';
 }
@@ -317,7 +319,12 @@ function renderSessionView() {
 
   $('#pos-current-label').textContent = currentPositionLabel(s);
   const arr = POSITIONS[s.tableSize] || POSITIONS[6];
-  $('#pos-sub').textContent = `次=${arr[nextPositionIdx(s)]} (${arr.length}-handed)`;
+  const dots = $('#pos-dots');
+  dots.innerHTML = '';
+  arr.forEach((_, i) => {
+    const d = el('div', { class: 'pos-dot' + (i === s.currentPositionIdx ? ' active' : '') });
+    dots.append(d);
+  });
 
   $('#break-banner').hidden = !isOnBreak(s);
   $('#break-btn').classList.toggle('active', isOnBreak(s));

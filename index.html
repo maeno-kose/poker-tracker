@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f172a" id="theme-color-meta">
+<title>Poker Hand Tracker</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+  <!-- ============================ TOP BAR ============================ -->
+  <header id="topbar">
+    <div id="stats-row">
+      <div class="vpip-wrap">
+        <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+          <circle cx="60" cy="60" r="50" class="ring-bg"></circle>
+          <circle cx="60" cy="60" r="50" class="ring-fg" id="vpip-ring"
+                  pathLength="100" stroke-dasharray="100" stroke-dashoffset="100"></circle>
+        </svg>
+        <div class="ring-text">
+          <div id="vpip-pct">0%</div>
+          <div class="ring-label">VPIP</div>
+        </div>
+      </div>
+      <div class="sub-stats">
+        <div><span id="pfr-pct">0%</span><label>PFR</label></div>
+        <div><span id="threeb-pct">0%</span><label>3bet</label></div>
+        <div><span id="hand-count">0</span><label>ハンド</label></div>
+        <div><span id="elapsed">00:00</span><label>経過</label></div>
+      </div>
+    </div>
+    <nav id="tabs">
+      <button class="tab-btn active" data-tab="play">プレイ</button>
+      <button class="tab-btn" data-tab="record">記録</button>
+      <button class="tab-btn" data-tab="settings">設定</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ============================ PLAY TAB ============================ -->
+    <section class="tab-panel active" id="tab-play">
+
+      <!-- No-active-session view: start a new session -->
+      <div id="no-session-view" class="centered">
+        <h2>新しいセッション</h2>
+        <form id="start-session-form" class="form-card">
+          <label>会場 / 店名
+            <input type="text" id="f-venue" placeholder="例: 〇〇カジノ" autocomplete="off">
+          </label>
+          <div class="row2">
+            <label>SB
+              <input type="number" id="f-sb" inputmode="decimal" min="0" step="0.5" value="1">
+            </label>
+            <label>BB
+              <input type="number" id="f-bb" inputmode="decimal" min="0" step="0.5" value="2">
+            </label>
+          </div>
+          <div class="row2">
+            <label>テーブル人数
+              <select id="f-table-size">
+                <option value="2">2 (HU)</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6" selected>6 (6-max)</option>
+                <option value="7">7</option>
+                <option value="8">8</option>
+                <option value="9">9 (Full Ring)</option>
+                <option value="10">10</option>
+              </select>
+            </label>
+            <label>区分
+              <select id="f-category">
+                <option value="HU">HU</option>
+                <option value="Short">Short</option>
+                <option value="FullRing" selected>FullRing</option>
+              </select>
+            </label>
+          </div>
+          <label>初期バイイン額
+            <input type="number" id="f-buyin" inputmode="decimal" min="0" step="1" value="200">
+          </label>
+          <label>初期ポジション (任意)
+            <select id="f-start-pos"></select>
+          </label>
+          <button type="submit" class="btn-primary big">セッション開始</button>
+        </form>
+      </div>
+
+      <!-- Active session view: action grid -->
+      <div id="active-session-view" hidden>
+        <div id="position-bar">
+          <button class="pos-nav" id="pos-prev" aria-label="前のポジション">◀</button>
+          <div class="pos-current">
+            <div class="pos-label" id="pos-current-label">UTG</div>
+            <div class="pos-sub" id="pos-sub">次のハンド</div>
+          </div>
+          <button class="pos-nav" id="pos-next" aria-label="次のポジション">▶</button>
+        </div>
+
+        <div id="break-banner" hidden>離席中 — ハンド/時間カウント停止</div>
+
+        <div id="action-grid">
+          <button class="act-btn act-fold"  data-action="fold">フォールド</button>
+          <button class="act-btn act-call"  data-action="call">コール</button>
+          <button class="act-btn act-raise" data-action="raise">レイズ</button>
+          <button class="act-btn act-3bet"  data-action="3bet">3ベット</button>
+          <button class="act-btn act-check" data-action="bbcheck">BBチェック</button>
+        </div>
+
+        <div id="util-row">
+          <button id="undo-btn">↶ 取消</button>
+          <button id="break-btn">離席</button>
+          <button id="rebuy-btn">リバイ</button>
+          <button id="snapshot-btn">チップ記録</button>
+          <button id="end-session-btn" class="danger">セッション終了</button>
+        </div>
+
+        <div id="session-meta">
+          <span id="meta-venue">—</span>
+          <span id="meta-blinds">—</span>
+          <span id="meta-table">—</span>
+          <span id="meta-buyin">バイイン: —</span>
+          <span id="meta-last-snap">最終チップ: —</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ RECORD TAB ============================ -->
+    <section class="tab-panel" id="tab-record">
+      <div class="record-toolbar">
+        <label>表示:
+          <select id="record-filter">
+            <option value="all">すべて</option>
+            <option value="HU">HU</option>
+            <option value="Short">Short</option>
+            <option value="FullRing">FullRing</option>
+          </select>
+        </label>
+      </div>
+      <div id="lifetime-stats" class="card">
+        <h3>通算スタッツ</h3>
+        <div class="grid4">
+          <div><b id="lt-hands">0</b><span>総ハンド</span></div>
+          <div><b id="lt-vpip">0%</b><span>VPIP</span></div>
+          <div><b id="lt-pfr">0%</b><span>PFR</span></div>
+          <div><b id="lt-3bet">0%</b><span>3bet</span></div>
+          <div><b id="lt-time">0h</b><span>総時間</span></div>
+          <div><b id="lt-profit">±0</b><span>累計収支</span></div>
+          <div><b id="lt-hourly">±0/h</b><span>平均時給</span></div>
+          <div><b id="lt-bb100">±0</b><span>bb/100</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>ポジション別 VPIP/PFR</h3>
+        <table id="pos-table">
+          <thead><tr><th>Pos</th><th>Hands</th><th>VPIP</th><th>PFR</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3>セッション履歴</h3>
+        <div id="session-list"></div>
+      </div>
+    </section>
+
+    <!-- ============================ SETTINGS TAB ============================ -->
+    <section class="tab-panel" id="tab-settings">
+      <div class="card">
+        <h3>外観</h3>
+        <label class="row-line">
+          ダークモード
+          <input type="checkbox" id="set-dark" checked>
+        </label>
+      </div>
+      <div class="card">
+        <h3>チップ記録</h3>
+        <label class="row-line">
+          Nハンドごとに入力を促す
+          <input type="number" id="set-snap-interval" min="0" step="10" value="50" inputmode="numeric">
+        </label>
+        <p class="hint">0 にすると自動プロンプトはOFF。手動「チップ記録」はいつでも可。</p>
+      </div>
+      <div class="card">
+        <h3>バックアップ</h3>
+        <button id="backup-export" class="btn-primary">全データをコピー</button>
+        <button id="backup-import" class="btn-secondary">貼り付けて復元</button>
+        <p class="hint">JSONテキストとしてクリップボードへ。復元はテキストを貼り付け。</p>
+      </div>
+      <div class="card">
+        <h3>危険操作</h3>
+        <button id="wipe-all" class="danger">全データを消去</button>
+      </div>
+      <div class="card">
+        <h3>このアプリについて</h3>
+        <p class="hint">Poker Hand Tracker v1.0 — Offline-first PWA. データはこの端末のIndexedDBに保存されます。</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ============================ MODALS ============================ -->
+<div class="modal-bg" id="modal-bg" hidden>
+  <div class="modal" id="modal">
+    <h3 id="modal-title">入力</h3>
+    <div id="modal-body"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="modal-cancel">キャンセル</button>
+      <button class="btn-primary" id="modal-ok">OK</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" hidden></div>
+
+<script src="db.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

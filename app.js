@@ -282,13 +282,16 @@ function statsOf(hands) {
 // =========================================================================
 // Position cycling
 // =========================================================================
+// Button moves clockwise around the table each hand, so from a fixed seat's
+// perspective the position progresses BTN→CO→HJ→UTG→BB→SB→BTN, i.e. the
+// index in POSITIONS[] decreases by 1 each hand.
 function nextPositionIdx(s) {
   const arr = POSITIONS[s.tableSize] || POSITIONS[6];
-  return (s.currentPositionIdx + 1) % arr.length;
+  return (s.currentPositionIdx - 1 + arr.length) % arr.length;
 }
 function prevPositionIdx(s) {
   const arr = POSITIONS[s.tableSize] || POSITIONS[6];
-  return (s.currentPositionIdx - 1 + arr.length) % arr.length;
+  return (s.currentPositionIdx + 1) % arr.length;
 }
 function currentPositionLabel(s) {
   const arr = POSITIONS[s.tableSize] || POSITIONS[6];
@@ -380,6 +383,7 @@ async function recordAction(action) {
   s.hands.push({
     action,
     position: pos,
+    tableSize: s.tableSize,
     time: new Date().toISOString(),
   });
   s.currentPositionIdx = nextPositionIdx(s);
@@ -591,13 +595,24 @@ async function renderRecordTab() {
   const all = await DB.listSessions();
   const ended = all.filter((s) => s.status === 'ended');
 
-  // Rebuild filter options based on table sizes that actually exist
-  const sizesPresent = [...new Set(ended.map((s) => s.tableSize))].sort((a, b) => a - b);
+  // Helper: per-hand table size, with fallback to session.tableSize for legacy hands
+  const handSize = (h, s) => h.tableSize || s.tableSize;
+
+  // Build filter options from per-hand table sizes across ALL sessions (incl. active)
+  const sizesPresent = new Set();
+  for (const s of all) {
+    if (s.hands && s.hands.length) {
+      for (const h of s.hands) sizesPresent.add(handSize(h, s));
+    } else if (s.tableSize) {
+      sizesPresent.add(s.tableSize);
+    }
+  }
+  const sizesArray = [...sizesPresent].sort((a, b) => a - b);
   const filterSel = $('#record-filter');
   const prev = state.filter;
   filterSel.innerHTML = '';
   filterSel.append(el('option', { value: 'all' }, 'すべて'));
-  for (const n of sizesPresent) {
+  for (const n of sizesArray) {
     filterSel.append(el('option', { value: `TS${n}` }, `${n}人`));
   }
   // restore selection if still valid
@@ -608,34 +623,50 @@ async function renderRecordTab() {
     state.filter = 'all';
   }
 
-  const filtered = (state.filter === 'all')
-    ? ended
-    : ended.filter((s) => `TS${s.tableSize}` === state.filter);
+  // Hand-level filter (null = all)
+  const targetSize = (state.filter === 'all') ? null : parseInt(state.filter.slice(2), 10);
+  const handMatches = (h, s) => targetSize == null || handSize(h, s) === targetSize;
+
+  // Session-level filter for time / profit aggregates: include only sessions that
+  // ended at the target size (session.tableSize is session's final size). When "all",
+  // include all ended sessions.
+  const sessionMatches = (s) => targetSize == null || s.tableSize === targetSize;
 
   // ----- Lifetime aggregate -----
   let agg = { total: 0, vpipNum: 0, pfrNum: 0, threebNum: 0 };
   let totalMs = 0, totalProfit = 0, totalBBWon = 0;
   const posAgg = {};
-  for (const s of filtered) {
-    const st = statsOf(s.hands);
-    agg.total += st.total;
-    agg.vpipNum += st.vpipNum;
-    agg.pfrNum += st.pfrNum;
-    agg.threebNum += st.threebNum;
-    totalMs += sessionEffectiveMs(s);
-    const cashoutYen = chipsToYen(s.cashout || 0, s);
-    const profit = cashoutYen - buyinTotal(s);
-    totalProfit += profit;
-    if (s.blinds && s.blinds.bb > 0) totalBBWon += profit / s.blinds.bb;
-    // per-position
+  for (const s of ended) {
+    // session-level: time / profit (gated by sessionMatches)
+    if (sessionMatches(s)) {
+      totalMs += sessionEffectiveMs(s);
+      const cashoutYen = chipsToYen(s.cashout || 0, s);
+      const profit = cashoutYen - buyinTotal(s);
+      totalProfit += profit;
+      if (s.blinds && s.blinds.bb > 0) totalBBWon += profit / s.blinds.bb;
+    }
+    // hand-level: VPIP/PFR/per-position (gated by handMatches)
     for (const h of s.hands) {
+      if (!handMatches(h, s)) continue;
+      const a = h.action;
+      if (a === 'fold' || a === 'call' || a === 'raise' || a === '3bet' || a === 'bbcheck') {
+        agg.total++;
+        if (a === 'call' || a === 'raise' || a === '3bet') agg.vpipNum++;
+        if (a === 'raise' || a === '3bet') agg.pfrNum++;
+        if (a === '3bet') agg.threebNum++;
+      }
+      // per-position. Split by tableSize only when showing "all".
       const p = h.position || '?';
-      posAgg[p] = posAgg[p] || { hands: 0, vpip: 0, pfr: 0 };
-      posAgg[p].hands++;
-      if (h.action === 'call' || h.action === 'raise' || h.action === '3bet') posAgg[p].vpip++;
-      if (h.action === 'raise' || h.action === '3bet') posAgg[p].pfr++;
+      const ts = handSize(h, s);
+      const key = (targetSize == null && ts) ? `${p}|${ts}` : p;
+      posAgg[key] = posAgg[key] || { hands: 0, vpip: 0, pfr: 0, pos: p, tableSize: ts };
+      posAgg[key].hands++;
+      if (a === 'call' || a === 'raise' || a === '3bet') posAgg[key].vpip++;
+      if (a === 'raise' || a === '3bet') posAgg[key].pfr++;
     }
   }
+  // For the sessions list / chart rendering below, keep using session-level filter
+  const filtered = ended.filter(sessionMatches);
   $('#lt-hands').textContent = agg.total;
   $('#lt-vpip').textContent = agg.total ? Math.round(agg.vpipNum / agg.total * 100) + '%' : '0%';
   $('#lt-pfr').textContent = agg.total ? Math.round(agg.pfrNum / agg.total * 100) + '%' : '0%';
@@ -666,20 +697,25 @@ async function renderRecordTab() {
   const order = ['UTG','UTG+1','UTG+2','MP','MP1','MP2','HJ','CO','BTN','SB','BB'];
   const tbody = $('#pos-table tbody');
   tbody.innerHTML = '';
-  const positions = Object.keys(posAgg).sort((a, b) => {
-    const ai = order.indexOf(a), bi = order.indexOf(b);
-    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  const entries = Object.values(posAgg).sort((a, b) => {
+    const ai = order.indexOf(a.pos), bi = order.indexOf(b.pos);
+    const posCmp = (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    if (posCmp !== 0) return posCmp;
+    return (a.tableSize || 0) - (b.tableSize || 0);
   });
-  for (const p of positions) {
-    const d = posAgg[p];
-    tbody.append(el('tr', null,
-      el('td', null, p),
+  const LOW_SAMPLE = 30;
+  for (const d of entries) {
+    const splitBySize = (targetSize == null) && d.tableSize;
+    const label = splitBySize ? `${d.pos} (${d.tableSize}人)` : d.pos;
+    const isLow = d.hands < LOW_SAMPLE;
+    tbody.append(el('tr', { class: isLow ? 'low-sample' : '' },
+      el('td', null, label),
       el('td', null, String(d.hands)),
       el('td', null, Math.round(d.vpip / d.hands * 100) + '%'),
       el('td', null, Math.round(d.pfr / d.hands * 100) + '%'),
     ));
   }
-  if (positions.length === 0) {
+  if (entries.length === 0) {
     tbody.append(el('tr', null, el('td', { colspan: 4, style: 'color:var(--text-dim);text-align:center;padding:12px;' }, 'データなし')));
   }
 

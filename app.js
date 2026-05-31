@@ -345,6 +345,9 @@ function renderSessionView() {
   $('#break-btn').classList.toggle('active', isOnBreak(s));
   $('#break-btn').textContent = isOnBreak(s) ? '復帰' : '離席';
 
+  const snapBtn = $('#snapshot-btn');
+  if (snapBtn) snapBtn.classList.toggle('has-prompt', !!s._snapshotPending);
+
   // BBチェックは現在ポジションがBBのときだけ有効
   const checkBtn = $('.act-check');
   if (checkBtn) {
@@ -437,14 +440,21 @@ async function doRebuy() {
 async function takeSnapshot(opts = {}) {
   const s = state.active;
   if (!s) return;
-  const promptMsg = opts.auto
+  // "Pending" = an auto-threshold was crossed and we're awaiting input.
+  // Tapping the snapshot button while pending counts as the auto response,
+  // so it updates the auto counter. A purely manual tap (not pending) does not.
+  const wasPending = !!s._snapshotPending;
+  const promptMsg = wasPending
     ? `${s.hands.length}ハンド経過。現在のスタック (チップ)`
     : `現在のスタック (チップ)`;
   const v = await promptAmount('スタック記録', promptMsg, { unit: 'chips', session: s });
   if (v == null) {
-    // user cancelled — don't push; remember last prompt point to avoid spam
-    s._lastSnapPromptHand = s.hands.length;
-    await DB.putSession(s);
+    if (wasPending) {
+      s._snapshotPending = false;
+      s._lastSnapPromptHand = s.hands.length;
+      await DB.putSession(s);
+      renderSessionView();
+    }
     return;
   }
   s.snapshots = s.snapshots || [];
@@ -453,7 +463,10 @@ async function takeSnapshot(opts = {}) {
     handIdx: s.hands.length,
     stack: v,
   });
-  s._lastSnapPromptHand = s.hands.length;
+  if (wasPending) {
+    s._snapshotPending = false;
+    s._lastSnapPromptHand = s.hands.length;
+  }
   await DB.putSession(s);
   toast(`スタック ${fmtChips(v, s)} を記録`);
   renderSessionView();
@@ -464,9 +477,13 @@ function maybePromptSnapshot() {
   if (!s) return;
   const interval = s.snapshotInterval || 0;
   if (!interval) return;
+  if (s._snapshotPending) return;
   const last = s._lastSnapPromptHand || 0;
   if (s.hands.length - last >= interval) {
-    takeSnapshot({ auto: true });
+    s._snapshotPending = true;
+    DB.putSession(s);
+    toast(`💰 ${s.hands.length}ハンド経過 — チップ記録できます`, 3500);
+    renderSessionView();
   }
 }
 
